@@ -12,7 +12,18 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if include "istio-resources.hasSpec" . }}
+  {{- toYaml .spec | nindent 2 }}
+{{- else }}
   host: {{ .host }}
+{{- with .exportTo }}
+  exportTo:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- with .workloadSelector }}
+  workloadSelector:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
 {{- if .trafficPolicy }}
   trafficPolicy:
     {{- toYaml .trafficPolicy | nindent 4 }}
@@ -20,5 +31,6 @@ spec:
 {{- if .subsets }}
   subsets:
     {{- toYaml .subsets | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}

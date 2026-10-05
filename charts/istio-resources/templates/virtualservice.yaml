@@ -1,6 +1,6 @@
 {{- $ingress := .Values.ingress | default dict }}
 {{- $vs := $ingress.virtualservice | default dict }}
-{{- if $vs }}
+{{- if or (include "istio-resources.hasSpec" $vs) (omit $vs "spec") }}
 apiVersion: networking.istio.io/v1alpha3
 kind: VirtualService
 metadata:
@@ -13,6 +13,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if include "istio-resources.hasSpec" $vs }}
+  {{- toYaml $vs.spec | nindent 2 }}
+{{- else }}
   hosts:
     {{- toYaml $ingress.hosts | nindent 4 }}
   gateways:
@@ -45,44 +48,13 @@ spec:
             port:
               number: {{ default 15021 $vs.health.port }}
     {{- end }}
-    {{- range $vs.http }}
-    {{- if .match }}
-    - match:
-        {{- toYaml .match | nindent 8 }}
-    {{- else }}
-    - match:
-        - uri:
-            prefix: /
-    {{- end }}
-    {{- with .rewrite }}
-      rewrite:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .redirect }}
-      redirect:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-      route:
-        {{- toYaml .route | nindent 8 }}
-    {{- with .timeout }}
-      timeout: {{ . }}
-    {{- end }}
-    {{- with .retries }}
-      retries:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .headers }}
-      headers:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .corsPolicy }}
-      corsPolicy:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
+    {{- with $vs.http }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
 {{- end }}
 {{- with $vs.tcp }}
   tcp:
     {{- toYaml . | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}

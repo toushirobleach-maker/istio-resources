@@ -1,3 +1,29 @@
+# Native `spec` is supported at every resource location (see README).
+# A non-null object, including {}, replaces the generated spec in full.
+# Missing/null spec keeps the existing convenience fields below for compatibility.
+# Keep name/type outside spec: the chart's resource naming is unchanged.
+# Fully native examples: ci/spec.yaml; convenience examples: ci/full.yaml.
+#
+# destinationrule:
+#   - name: api
+#     spec:
+#       host: api.default.svc.cluster.local
+#       exportTo: ["."]
+#       workloadSelector:
+#         matchLabels:
+#           app: istio-ingressgateway
+#       trafficPolicy:
+#         tls:
+#           mode: SIMPLE
+#           sni: api.default.svc.cluster.local
+#           subjectAltNames: [api.default.svc.cluster.local]
+#
+# Native spec locations:
+# ingress.gateways[].spec / ingress.virtualservice.spec
+# egress[].spec / egress[].gateways[].spec / egress[].virtualservice.spec
+# destinationrule[].spec / authorizationPolicy[].spec
+# peerAuthentication[].spec / requestAuthentication[].spec
+
 # -- Override the chart name (used in resource names and labels).
 nameOverride: ""
 
@@ -136,6 +162,10 @@ ingress:
 # destinationrule:
 #   - name: my-service
 #     host: my-service
+#     # exportTo: ["."]                      # limit visibility to this namespace
+#     # workloadSelector:                    # limit policy to matching clients in this namespace
+#     #   matchLabels:
+#     #     app: istio-ingressgateway
 #     trafficPolicy:
 #       loadBalancer:
 #         simple: RANDOM

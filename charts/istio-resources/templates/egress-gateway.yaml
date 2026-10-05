@@ -1,5 +1,6 @@
 {{- range .Values.egress }}
 {{- $egress := . }}
+{{- $config := include "istio-resources.egressConfig" . | fromYaml }}
 {{- range .gateways }}
 ---
 apiVersion: networking.istio.io/v1alpha3
@@ -14,20 +15,24 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if include "istio-resources.hasSpec" . }}
+  {{- toYaml .spec | nindent 2 }}
+{{- else }}
   selector:
     app: {{ .gateway_selector }}
   servers:
-    {{- range $egress.ports }}
+    {{- range $config.ports }}
     - port:
         number: {{ .number }}
         name: {{ .name }}
         protocol: {{ .protocol }}
-    {{- if ne .protocol "HTTP" }}
+    {{- if or (eq .protocol "TLS") (eq .protocol "HTTPS") }}
       tls:
         mode: PASSTHROUGH
     {{- end }}
       hosts:
-        {{- toYaml $egress.hosts | nindent 8 }}
+        {{- toYaml $config.hosts | nindent 8 }}
     {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

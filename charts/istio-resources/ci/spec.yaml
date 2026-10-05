@@ -1,0 +1,144 @@
+# Native Istio specs; convenience fields deliberately conflict to check precedence.
+ingress:
+  name: api
+  hosts: [ignored.example.com]
+  gateways:
+    - type: internal
+      gateway_selector: ignored-gateway
+      redirectHttps: true
+      spec:
+        selector:
+          app: istio-ingressgateway
+        servers:
+          - port:
+              number: 80
+              name: http
+              protocol: HTTP
+            hosts: [api.example.com]
+  virtualservice:
+    health:
+      enabled: true
+    spec:
+      hosts: [api.example.com]
+      gateways: [api-gateway-internal]
+      exportTo: ["."]
+      http:
+        - name: response
+          directResponse:
+            status: 200
+            body:
+              string: ready
+
+egress:
+  - name: external
+    hosts: [ignored.example.com]
+    ports:
+      - number: 80
+        name: ignored
+        protocol: HTTP
+    spec:
+      hosts: [external.example.com]
+      ports:
+        - number: 443
+          name: tls
+          protocol: TLS
+      location: MESH_EXTERNAL
+      resolution: DNS
+      exportTo: ["."]
+    gateways:
+      - type: egress
+        gateway_selector: ignored-gateway
+        spec:
+          selector:
+            app: istio-egressgateway
+          servers:
+            - port:
+                number: 443
+                name: tls
+                protocol: TLS
+              hosts: [external.example.com]
+              tls:
+                mode: PASSTHROUGH
+    virtualservice:
+      spec:
+        hosts: [external.example.com]
+        gateways: [mesh, external-gateway-egress]
+        tls:
+          - match:
+              - port: 443
+                sniHosts: [external.example.com]
+                gateways: [mesh]
+            route:
+              - destination:
+                  host: istio-egressgateway.istio-system.svc.cluster.local
+                  port:
+                    number: 443
+          - match:
+              - port: 443
+                sniHosts: [external.example.com]
+                gateways: [external-gateway-egress]
+            route:
+              - destination:
+                  host: external.example.com
+                  port:
+                    number: 443
+
+destinationrule:
+  - name: api
+    host: ignored.example.com
+    trafficPolicy:
+      tls:
+        mode: DISABLE
+    spec:
+      host: kubernetes.default.svc.cluster.local
+      exportTo: ["."]
+      workloadSelector:
+        matchLabels:
+          app: istio-ingressgateway
+      trafficPolicy:
+        tls:
+          mode: SIMPLE
+          caCertificates: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          sni: kubernetes.default.svc.cluster.local
+          subjectAltNames: [kubernetes.default.svc.cluster.local]
+
+authorizationPolicy:
+  - name: api
+    action: ALLOW
+    rules: [{}]
+    spec:
+      selector:
+        matchLabels:
+          app: api
+      action: DENY
+      rules:
+        - to:
+            - operation:
+                paths: [/private]
+
+peerAuthentication:
+  - name: api
+    mtls:
+      mode: DISABLE
+    spec:
+      selector:
+        matchLabels:
+          app: api
+      mtls:
+        mode: STRICT
+      portLevelMtls:
+        "8080":
+          mode: PERMISSIVE
+
+requestAuthentication:
+  - name: api
+    jwtRules:
+      - issuer: https://ignored.example.com
+    spec:
+      selector:
+        matchLabels:
+          app: api
+      jwtRules:
+        - issuer: https://idp.example.com
+          jwksUri: https://idp.example.com/.well-known/jwks.json
+          forwardOriginalToken: true

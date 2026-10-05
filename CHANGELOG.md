@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-10-05
+
+### Added
+- Optional native `spec` objects for every resource, with full replacement
+  precedence and legacy-value fallback when omitted or null. Existing resource
+  naming and automatic ingress/egress generation are preserved.
+- `egress[].virtualservice.spec` can declare an egress VirtualService without
+  automatically creating gateway resources. Generated egress children can use
+  the hosts and ports from a native ServiceEntry spec.
+- **Scoped DestinationRules:** optional `exportTo` and `workloadSelector`
+  fields on each `destinationrule[]` entry.
+- Rendered-resource regression checks on pull requests and before release.
+- Offline Istio validation of rendered regression manifests in CI.
+
+### Fixed
+- Pass through complete `ingress.virtualservice.http[]` routes, preserving
+  fault policies, direct responses, redirects, mirroring, and route names.
+- Honor an explicit empty `authorizationPolicy[].spec: {}` override instead
+  of falling back to inherited selector/action/rules values. A null spec
+  continues to use the convenience fields for compatibility.
+- Add TLS PASSTHROUGH only to HTTPS/TLS egress gateway ports; leave plain TCP
+  and HTTP-family ports without TLS settings.
+
 ## [0.2.0] - 2026-09-09
 
 ### Added

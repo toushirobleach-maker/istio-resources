@@ -1,6 +1,10 @@
 name: Release Charts
 
 on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - ".github/workflows/**"
   push:
     branches:
       - main
@@ -26,10 +30,33 @@ jobs:
       - name: helm lint (all resources enabled)
         run: helm lint charts/istio-resources -f charts/istio-resources/ci/full.yaml
 
+      - name: helm lint (native specs)
+        run: helm lint charts/istio-resources -f charts/istio-resources/ci/spec.yaml
+
       - name: helm template renders without error (default values)
         run: helm template test charts/istio-resources > /dev/null
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install YAML parser
+        run: python -m pip install PyYAML==6.0.2
+
+      - name: Set up Istio validator
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/istio/istio/releases/download/1.28.3/istio-1.28.3-linux-amd64.tar.gz \
+            --output "$RUNNER_TEMP/istio.tar.gz"
+          tar -xzf "$RUNNER_TEMP/istio.tar.gz" -C "$RUNNER_TEMP" istio-1.28.3/bin/istioctl
+          printf '%s\n' "$RUNNER_TEMP/istio-1.28.3/bin" >> "$GITHUB_PATH"
+
+      - name: Check rendered resource behavior
+        run: python -m unittest discover -s charts/istio-resources/ci -p 'test_*.py' -v
+
   release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: lint
     permissions:
       contents: write

@@ -33,8 +33,9 @@ ingress:
         - number: 443
           name: https
           protocol: HTTPS
-          tls:
-            mode: SIMPLE
+              tls:
+                mode: SIMPLE
+                credentialName: git-tls
         - number: 80
           name: http
           protocol: HTTP
@@ -109,6 +110,101 @@ Per-gateway options:
 `requestAuthentication` are **lists**, so one release can declare several of
 each (multiple egress endpoints, multiple policies, etc.).
 
+### Scoped DestinationRules
+
+Set `destinationrule[].spec.workloadSelector` to apply an upstream policy only to
+matching client workloads in the rule's namespace. Set `exportTo: ["."]` to
+limit visibility to that namespace. For example, originate TLS from an
+ingress gateway without changing other clients of the same service:
+
+```yaml
+destinationrule:
+  - name: apiserver-ingress
+    spec:
+      host: kubernetes.default.svc.cluster.local
+      exportTo: ["."]
+      workloadSelector:
+        matchLabels:
+          app: istio-ingressgateway
+      trafficPolicy:
+        tls:
+          mode: SIMPLE
+          caCertificates: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          sni: kubernetes.default.svc.cluster.local
+          subjectAltNames:
+            - kubernetes.default.svc.cluster.local
+```
+
+The CA file must be readable in the selected gateway pods. Verify the server
+certificate contains the configured subject alternative name. The rule and
+selected workloads must share a namespace; selectors do not span namespaces.
+
+Omitting `exportTo` and `workloadSelector` keeps the existing unscoped behavior.
+
+### Native specs for every resource
+
+Use `spec` to pass a complete native Istio resource specification through
+unchanged. The chart still creates metadata using its existing naming,
+namespace, labels, and annotations. This avoids maintaining a second copy of
+Istio's API in Helm templates.
+
+| Resource | Native spec location |
+|---|---|
+| Ingress Gateway | `ingress.gateways[].spec` |
+| Ingress VirtualService | `ingress.virtualservice.spec` |
+| ServiceEntry | `egress[].spec` |
+| Egress Gateway | `egress[].gateways[].spec` |
+| Egress VirtualService | `egress[].virtualservice.spec` |
+| DestinationRule | `destinationrule[].spec` |
+| AuthorizationPolicy | `authorizationPolicy[].spec` |
+| PeerAuthentication | `peerAuthentication[].spec` |
+| RequestAuthentication | `requestAuthentication[].spec` |
+
+The same rules apply at every location:
+
+- A non-null spec object replaces the entire generated spec. Convenience
+  fields, health routes, redirects, and generated gateway references are not
+  merged into it. Supply all required native fields explicitly.
+- An explicit `spec: {}` is passed through as an empty object. Whether an
+  empty spec is valid depends on the Istio resource kind.
+- An omitted spec or `spec: null` uses the existing convenience fields and
+  automatic generation. Values in the 0.2.1 format need no schema changes
+  to use 0.3.0. The bug fixes listed in the changelog still apply.
+- Non-object spec values fail Helm rendering with an explicit error.
+
+These rules apply to the final Helm values. Helm's normal merging of multiple
+values files still takes place before template rendering.
+
+A spec override affects only its resource. For example, overriding an ingress
+VirtualService does not suppress the Gateways declared in `ingress.gateways`.
+The chart does not create gateway references or inject a health probe inside
+that native VirtualService spec.
+
+For egress, `egress[].spec` overrides the ServiceEntry only. If `gateways` are
+also declared, automatic egress Gateway/VirtualService generation uses the
+ServiceEntry spec's `hosts` and `ports`. Override each child's own spec to
+control it directly. A native `egress[].virtualservice.spec` also creates an
+egress VirtualService when no generated gateways are declared.
+
+See [`ci/spec.yaml`](charts/istio-resources/ci/spec.yaml) for a validated example
+covering every native spec location. [`ci/full.yaml`](charts/istio-resources/ci/full.yaml)
+continues to exercise the existing convenience format.
+
+### HTTP routes
+
+`ingress.virtualservice.http[]` entries are passed through to Istio in full,
+including route names, direct responses, redirects, mirroring, fault policies,
+headers, and destinations. A route without `match` remains a catch-all route
+according to Istio semantics. When enabled, the built-in health probe remains
+the first route, followed by the supplied HTTP routes in their original order.
+
+### AuthorizationPolicy spec overrides
+
+An explicit `authorizationPolicy[].spec` takes precedence over the convenience
+fields (`selector`, `targetRefs`, `action`, `rules`), including an empty object.
+Use `spec: {}` for an allow-nothing policy. Without `spec`, or with `spec: null`,
+the chart renders the convenience fields as before.
+
 ### Standardized metadata
 Every resource gets Helm recommended labels (`app.kubernetes.io/*`,
 `helm.sh/chart`) plus optional `commonLabels` and `commonAnnotations`. Use
@@ -131,10 +227,12 @@ Every resource gets Helm recommended labels (`app.kubernetes.io/*`,
 | `ingress.virtualservice.health.enabled` | bool | `false` | Inject `/health` probe as first HTTP rule |
 | `ingress.virtualservice.health.host` | string | `istio-ingress-gateway` | Health destination host |
 | `ingress.virtualservice.health.port` | int | `15021` | Health destination port |
-| `ingress.virtualservice.http[]` | list | `[]` | HTTP routes (match/rewrite/redirect/route/timeout/retries/corsPolicy) |
+| `ingress.virtualservice.http[]` | list | `[]` | HTTP routes (match/rewrite/redirect/route/timeout/retries/headers/fault/corsPolicy) |
 | `ingress.virtualservice.tcp[]` | list | `[]` | TCP routes |
 | `egress[]` | list | `[]` | ServiceEntry definitions |
 | `destinationrule[]` | list | `[]` | DestinationRule definitions |
+| `destinationrule[].exportTo` | list | unset | Namespaces to which the rule is exported |
+| `destinationrule[].workloadSelector` | object | unset | Select matching client workloads in the rule's namespace |
 | `authorizationPolicy[]` | list | `[]` | AuthorizationPolicy definitions |
 | `peerAuthentication[]` | list | `[]` | PeerAuthentication definitions |
 | `requestAuthentication[]` | list | `[]` | RequestAuthentication definitions |
@@ -145,4 +243,16 @@ for fully commented examples of every resource.
 ## CI
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) runs `helm lint`
-on default and full-feature values before publishing with chart-releaser.
+on default and full-feature values and rendered-resource regression checks
+on pull requests and pushes to `main`. CI also validates rendered test manifests
+with `istioctl` 1.28.3, without connecting to a cluster. Only pushes to `main`
+publish charts with chart-releaser.
+
+Run the regression checks locally with Helm, Python, and PyYAML installed:
+
+```sh
+python -m unittest discover -s charts/istio-resources/ci -p 'test_*.py' -v
+```
+
+If `istioctl` is available on `PATH`, these tests also run `istioctl validate`
+on every non-empty rendered manifest. CI installs it before running the tests.

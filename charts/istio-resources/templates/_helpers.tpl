@@ -60,3 +60,22 @@ Common annotations applied to every resource.
 {{ toYaml . }}
 {{- end }}
 {{- end -}}
+
+{{/* A non-null spec object replaces the entire generated spec, including {}. */}}
+{{- define "istio-resources.hasSpec" -}}
+{{- if and (hasKey . "spec") (ne .spec nil) -}}
+{{- if not (kindIs "map" .spec) -}}
+{{- fail "spec must be a YAML object, or null to use legacy values" -}}
+{{- end -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/* Generated egress children use the effective ServiceEntry hosts and ports. */}}
+{{- define "istio-resources.egressConfig" -}}
+{{- if include "istio-resources.hasSpec" . -}}
+{{- toYaml .spec -}}
+{{- else -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}

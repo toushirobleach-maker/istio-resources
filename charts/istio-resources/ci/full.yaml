@@ -18,6 +18,7 @@ ingress:
           protocol: HTTPS
           tls:
             mode: SIMPLE
+            credentialName: git-tls
         - number: 80
           name: http
           protocol: HTTP
@@ -39,6 +40,11 @@ ingress:
         retries:
           attempts: 3
           perTryTimeout: 5s
+        fault:
+          delay:
+            percentage:
+              value: 10
+            fixedDelay: 1s
       - route:
           - destination:
               host: httpbin.default.svc.cluster.local
@@ -84,6 +90,19 @@ destinationrule:
       - name: v1
         labels:
           version: v1
+  - name: apiserver-ingress
+    host: kubernetes.default.svc.cluster.local
+    exportTo: ["."]
+    workloadSelector:
+      matchLabels:
+        app: istio-ingressgateway
+    trafficPolicy:
+      tls:
+        mode: SIMPLE
+        caCertificates: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        sni: kubernetes.default.svc.cluster.local
+        subjectAltNames:
+          - kubernetes.default.svc.cluster.local
 
 authorizationPolicy:
   - name: allow-get

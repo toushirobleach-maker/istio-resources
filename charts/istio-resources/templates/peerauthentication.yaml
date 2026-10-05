@@ -12,6 +12,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if include "istio-resources.hasSpec" . }}
+  {{- toYaml .spec | nindent 2 }}
+{{- else }}
   {{- if .selector }}
   selector:
     {{- toYaml .selector | nindent 4 }}
@@ -27,5 +30,6 @@ spec:
   {{- with .portLevelMtls }}
   portLevelMtls:
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}

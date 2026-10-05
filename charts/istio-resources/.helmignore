@@ -1,0 +1,4 @@
+# Regression fixtures and Python tests are source-only.
+ci/
+__pycache__/
+*.pyc

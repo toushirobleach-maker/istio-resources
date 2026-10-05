@@ -11,7 +11,7 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-{{- if .spec }}
+{{- if include "istio-resources.hasSpec" . }}
 spec:
   {{- toYaml .spec | nindent 2 }}
 {{- else }}

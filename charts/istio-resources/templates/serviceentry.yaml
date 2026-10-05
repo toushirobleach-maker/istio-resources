@@ -12,6 +12,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if include "istio-resources.hasSpec" . }}
+  {{- toYaml .spec | nindent 2 }}
+{{- else }}
   hosts:
     {{- toYaml .hosts | nindent 4 }}
   ports:
@@ -25,5 +28,6 @@ spec:
 {{- end }}
 {{- if .resolution }}
   resolution: {{ .resolution }}
+{{- end }}
 {{- end }}
 {{- end }}

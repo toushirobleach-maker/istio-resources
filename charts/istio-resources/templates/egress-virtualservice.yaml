@@ -1,15 +1,9 @@
 {{- range .Values.egress }}
-{{- if .gateways }}
+{{- $vs := .virtualservice | default dict }}
+{{- $hasSpec := include "istio-resources.hasSpec" $vs }}
+{{- if or .gateways $hasSpec }}
 {{- $egress := . }}
 {{- $name := .name }}
-{{- $firstGw := index .gateways 0 }}
-{{- $gwHost := default "istio-egressgateway.istio-system.svc.cluster.local" $firstGw.host }}
-{{- $hasHttp := false }}
-{{- $hasTls := false }}
-{{- $hasTcp := false }}
-{{- range .ports }}
-{{- if eq .protocol "HTTP" }}{{- $hasHttp = true }}{{- else if or (eq .protocol "TLS") (eq .protocol "HTTPS") }}{{- $hasTls = true }}{{- else }}{{- $hasTcp = true }}{{- end }}
-{{- end }}
 ---
 apiVersion: networking.istio.io/v1alpha3
 kind: VirtualService
@@ -23,8 +17,20 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+{{- if $hasSpec }}
+  {{- toYaml $vs.spec | nindent 2 }}
+{{- else }}
+{{- $config := include "istio-resources.egressConfig" . | fromYaml }}
+{{- $firstGw := index .gateways 0 }}
+{{- $gwHost := default "istio-egressgateway.istio-system.svc.cluster.local" $firstGw.host }}
+{{- $hasHttp := false }}
+{{- $hasTls := false }}
+{{- $hasTcp := false }}
+{{- range $config.ports }}
+{{- if eq .protocol "HTTP" }}{{- $hasHttp = true }}{{- else if or (eq .protocol "TLS") (eq .protocol "HTTPS") }}{{- $hasTls = true }}{{- else }}{{- $hasTcp = true }}{{- end }}
+{{- end }}
   hosts:
-    {{- toYaml $egress.hosts | nindent 4 }}
+    {{- toYaml $config.hosts | nindent 4 }}
   gateways:
     - mesh
     {{- range $egress.gateways }}
@@ -33,12 +39,12 @@ spec:
 {{- if $hasTls }}
   {{/* TLS routes: SNI-matched, required for passthrough traffic to leave via the gateway. */}}
   tls:
-    {{- range $egress.ports }}
+    {{- range $config.ports }}
     {{- if or (eq .protocol "TLS") (eq .protocol "HTTPS") }}
     - match:
         - port: {{ .number }}
           sniHosts:
-            {{- toYaml $egress.hosts | nindent 12 }}
+            {{- toYaml $config.hosts | nindent 12 }}
           gateways:
             - mesh
       route:
@@ -52,14 +58,14 @@ spec:
     - match:
         - port: {{ .number }}
           sniHosts:
-            {{- toYaml $egress.hosts | nindent 12 }}
+            {{- toYaml $config.hosts | nindent 12 }}
           gateways:
             {{- range $egress.gateways }}
             - {{ default $.Release.Name $name }}-gateway-{{ .type }}
             {{- end }}
       route:
         - destination:
-            host: {{ index $egress.hosts 0 }}
+            host: {{ index $config.hosts 0 }}
             port:
               number: {{ .number }}
     {{- end }}
@@ -67,7 +73,7 @@ spec:
 {{- end }}
 {{- if $hasTcp }}
   tcp:
-    {{- range $egress.ports }}
+    {{- range $config.ports }}
     {{- if ne .protocol "HTTP" }}{{- if ne .protocol "TLS" }}{{- if ne .protocol "HTTPS" }}
     - match:
         - port: {{ .number }}
@@ -89,7 +95,7 @@ spec:
             {{- end }}
       route:
         - destination:
-            host: {{ index $egress.hosts 0 }}
+            host: {{ index $config.hosts 0 }}
             port:
               number: {{ .number }}
     {{- end }}{{- end }}{{- end }}
@@ -97,7 +103,7 @@ spec:
 {{- end }}
 {{- if $hasHttp }}
   http:
-    {{- range $egress.ports }}
+    {{- range $config.ports }}
     {{- if eq .protocol "HTTP" }}
     - match:
         - port: {{ .number }}
@@ -119,11 +125,12 @@ spec:
             {{- end }}
       route:
         - destination:
-            host: {{ index $egress.hosts 0 }}
+            host: {{ index $config.hosts 0 }}
             port:
               number: {{ .number }}
     {{- end }}
     {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
